@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JWT 디코더</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<div class="container">
+<div class="header">
+<h1>JWT 디코더</h1>
+<a href="../index.html">홈</a>
+</div>
+<p class="description">서명 검증 없이 헤더/페이로드를 확인합니다. 민감정보는 입력하지 마세요.</p>
+<div class="grid two">
+<div class="card">
+<h3>JWT</h3>
+<textarea id="input" placeholder="eyJhbGciOi... 형식의 토큰"></textarea>
+<div class="button-row">
+<button id="dec">디코딩 →</button>
+<button id="clear" class="ghost">지우기</button>
+</div>
+</div>
+<div class="card">
+<h3>해석 결과</h3>
+<div class="button-row">
+<button id="copy-header" class="secondary">헤더 복사</button>
+<button id="copy-payload" class="secondary">페이로드 복사</button>
+</div>
+<h4>Header</h4>
+<textarea id="header" readonly></textarea>
+<h4>Payload</h4>
+<textarea id="payload" readonly></textarea>
+<p class="small" id="status"></p>
+</div>
+</div>
+</div>
+<script src="../assets/utils.js"></script>
+<script>
+(function(){
+  var input = document.getElementById('input');
+  var header = document.getElementById('header');
+  var payload = document.getElementById('payload');
+  var status = document.getElementById('status');
+  function setStatus(msg, isError){
+    status.textContent = msg || '';
+    status.style.color = isError ? '#b91c1c' : '#6b7280';
+  }
+  document.getElementById('dec').addEventListener('click', function(){
+    try {
+      var decoded = Encoders.jwtDecode(input.value);
+      header.value = JSON.stringify(decoded.header, null, 2);
+      payload.value = JSON.stringify(decoded.payload, null, 2);
+      setStatus('완료');
+    } catch(e){ setStatus(e.message, true); }
+  });
+  document.getElementById('clear').addEventListener('click', function(){ input.value=''; header.value=''; payload.value=''; setStatus(''); });
+  document.getElementById('copy-header').addEventListener('click', function(){ Encoders.copyToClipboard(header.value); setStatus('헤더 복사됨'); });
+  document.getElementById('copy-payload').addEventListener('click', function(){ Encoders.copyToClipboard(payload.value); setStatus('페이로드 복사됨'); });
+})();
+</script>
+</body>
+</html>

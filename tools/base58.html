@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Base58 인코더/디코더</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<div class="container">
+<div class="header">
+<h1>Base58</h1>
+<a href="../index.html">홈</a>
+</div>
+<p class="description">텍스트 ↔ Base58 변환을 수행합니다. (Bitcoin 알파벳)</p>
+<div class="grid two">
+<div class="card">
+<h3>입력</h3>
+<textarea id="input" placeholder="텍스트 또는 Base58"></textarea>
+<div class="button-row">
+<button id="enc">텍스트 → Base58</button>
+<button id="dec">Base58 → 텍스트</button>
+<button id="swap" class="ghost">입력/출력 교환</button>
+</div>
+</div>
+<div class="card">
+<h3>출력</h3>
+<textarea id="output" readonly placeholder="결과"></textarea>
+<div class="button-row">
+<button id="copy" class="secondary">복사</button>
+<button id="clear" class="ghost">지우기</button>
+</div>
+<p class="small" id="status"></p>
+</div>
+</div>
+</div>
+<script src="../assets/utils.js"></script>
+<script>
+(function(){
+  var input = document.getElementById('input');
+  var output = document.getElementById('output');
+  var status = document.getElementById('status');
+  function setStatus(msg, isError){
+    status.textContent = msg || '';
+    status.style.color = isError ? '#b91c1c' : '#6b7280';
+  }
+  document.getElementById('enc').addEventListener('click', function(){
+    try { output.value = Encoders.base58EncodeString(input.value); setStatus('완료'); } catch(e){ setStatus(e.message, true); }
+  });
+  document.getElementById('dec').addEventListener('click', function(){
+    try { output.value = Encoders.base58DecodeToString(input.value); setStatus('완료'); } catch(e){ setStatus(e.message, true); }
+  });
+  document.getElementById('swap').addEventListener('click', function(){
+    var t = input.value; input.value = output.value; output.value = t; setStatus('');
+  });
+  document.getElementById('clear').addEventListener('click', function(){ input.value=''; output.value=''; setStatus(''); });
+  document.getElementById('copy').addEventListener('click', function(){ Encoders.copyToClipboard(output.value); setStatus('복사됨'); });
+})();
+</script>
+</body>
+</html>

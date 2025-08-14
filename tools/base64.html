@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Base64 인코더/디코더</title>
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+<div class="container">
+<div class="header">
+<h1>Base64</h1>
+<a href="../index.html">홈</a>
+</div>
+<p class="description">텍스트를 Base64 또는 Base64URL 방식으로 인코딩/디코딩합니다.</p>
+<div class="grid two">
+<div class="card">
+<h3>입력</h3>
+<textarea id="input" placeholder="여기에 텍스트 또는 Base64를 입력"></textarea>
+<div class="button-row">
+<button id="b64-enc">Base64 인코딩 →</button>
+<button id="b64-dec">Base64 디코딩 →</button>
+<button id="b64u-enc" class="ghost">Base64URL 인코딩 →</button>
+<button id="b64u-dec" class="ghost">Base64URL 디코딩 →</button>
+<button id="swap" class="ghost">입력/출력 교환</button>
+</div>
+</div>
+<div class="card">
+<h3>출력</h3>
+<textarea id="output" readonly placeholder="결과"></textarea>
+<div class="button-row">
+<button id="copy" class="secondary">복사</button>
+<button id="clear" class="ghost">지우기</button>
+</div>
+<p class="small" id="status"></p>
+</div>
+</div>
+</div>
+<script src="../assets/utils.js"></script>
+<script>
+(function(){
+  var input = document.getElementById('input');
+  var output = document.getElementById('output');
+  var status = document.getElementById('status');
+  function setStatus(msg, isError){
+    status.textContent = msg || '';
+    status.style.color = isError ? '#b91c1c' : '#6b7280';
+  }
+  document.getElementById('b64-enc').addEventListener('click', function(){
+    try { output.value = Encoders.base64Encode(input.value); setStatus('완료'); } catch(e){ setStatus(e.message, true); }
+  });
+  document.getElementById('b64-dec').addEventListener('click', function(){
+    try { output.value = Encoders.base64Decode(input.value); setStatus('완료'); } catch(e){ setStatus(e.message, true); }
+  });
+  document.getElementById('b64u-enc').addEventListener('click', function(){
+    try { output.value = Encoders.base64UrlEncode(input.value); setStatus('완료'); } catch(e){ setStatus(e.message, true); }
+  });
+  document.getElementById('b64u-dec').addEventListener('click', function(){
+    try { output.value = Encoders.base64UrlDecode(input.value); setStatus('완료'); } catch(e){ setStatus(e.message, true); }
+  });
+  document.getElementById('swap').addEventListener('click', function(){
+    var t = input.value; input.value = output.value; output.value = t; setStatus('');
+  });
+  document.getElementById('clear').addEventListener('click', function(){ input.value=''; output.value=''; setStatus(''); });
+  document.getElementById('copy').addEventListener('click', function(){ Encoders.copyToClipboard(output.value); setStatus('복사됨'); });
+})();
+</script>
+</body>
+</html>
