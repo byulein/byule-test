@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>테스트 페이지</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+<h1>테스트 페이지</h1>
+<p>이 페이지는 동작 확인을 위한 테스트 페이지입니다.</p>
+<button id="btn">버튼 클릭 테스트</button>
+<p id="output">버튼을 눌러보세요.</p>
+<script>
+document.getElementById('btn').addEventListener('click', function() {
+var outputEl = document.getElementById('output');
+var now = new Date();
+outputEl.textContent = '버튼 클릭됨: ' + now.toLocaleString();
+});
+</script>
+<p><a href="index.html">홈으로 돌아가기</a></p>
+</body>
+</html>
