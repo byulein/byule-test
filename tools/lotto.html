@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>로또 통계/예측</title>
+<link rel="stylesheet" href="../assets/styles.css">
+<style>
+/***** Page-specific styles kept minimal *****/
+.summary-grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
+@media (min-width: 900px) { .summary-grid { grid-template-columns: 1fr 1fr; } }
+.freq-grid { display: grid; grid-template-columns: repeat(9, 1fr); gap: 8px; }
+.freq-cell { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border: 1px solid #e5e7eb; border-radius: 10px; background: #fff; }
+.freq-num { font-weight: 700; width: 36px; height: 36px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; background: #eef2ff; color: #1e40af; margin-right: 8px; }
+.freq-meta { font-size: 12px; color: #6b7280; text-align: right; }
+.badge { display: inline-flex; align-items: center; gap: 6px; padding: 8px 10px; border-radius: 999px; background: #f1f5f9; border: 1px solid #e5e7eb; font-weight: 600; }
+.badge .nums { letter-spacing: 1px; }
+.inline { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.kbd { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; background: #f8fafc; border: 1px solid #e5e7eb; padding: 0 6px; border-radius: 6px; font-size: 12px; }
+.legend { display: flex; gap: 8px; align-items: center; }
+.legend .box { width: 14px; height: 14px; border-radius: 4px; border: 1px solid #e5e7eb; }
+.muted { color: #6b7280; }
+.smallnote { font-size: 12px; color: #6b7280; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>로또 통계/예측</h1>
+    <a href="../index.html">홈</a>
+  </div>
+  <p class="description">동행복권 로또 6/45 과거 당첨 번호를 자동으로 수집/갱신하여 통계 및 간단한 예측 번호를 제공합니다. 실제 구매는 책임 하에 진행하세요.</p>
+  <div class="summary-grid">
+    <div class="card">
+      <h3>요약</h3>
+      <div class="inline">
+        <span id="summary-draws">총 회차: -</span>
+        <span>•</span>
+        <span id="summary-latest">최근 회차: -</span>
+      </div>
+      <p class="small" id="summary-range">기간: -</p>
+      <p class="small" id="last-updated">업데이트: -</p>
+      <div class="button-row">
+        <button id="refresh">데이터 새로고침</button>
+        <button id="clear-cache" class="ghost">캐시 초기화</button>
+      </div>
+      <p class="small" id="status"></p>
+    </div>
+    <div class="card">
+      <h3>예측 번호</h3>
+      <div class="inline" style="margin-bottom:8px">
+        <label for="range-select" class="muted">분석 범위</label>
+        <select id="range-select">
+          <option value="all">전체</option>
+          <option value="50">최근 50회</option>
+          <option value="100">최근 100회</option>
+          <option value="200" selected>최근 200회</option>
+        </select>
+        <label for="set-count" class="muted">세트</label>
+        <input id="set-count" type="number" value="5" min="1" max="10" style="width:64px">
+        <button id="regen" class="secondary">새로 생성</button>
+      </div>
+      <div id="prediction-sets" class="inline"></div>
+      <p class="smallnote">주의: 본 예측은 단순 통계 기반 휴리스틱입니다. 적중을 보장하지 않습니다.</p>
+    </div>
+  </div>
+  <div class="card" style="margin-top:12px">
+    <div class="inline" style="justify-content: space-between; width: 100%">
+      <h3>번호별 빈도</h3>
+      <div class="legend">
+        <span class="muted">낮음</span>
+        <span class="box" style="background:#eef2ff"></span>
+        <span class="box" style="background:#dbeafe"></span>
+        <span class="box" style="background:#bfdbfe"></span>
+        <span class="box" style="background:#93c5fd"></span>
+        <span class="box" style="background:#60a5fa"></span>
+        <span class="box" style="background:#3b82f6"></span>
+        <span class="muted">높음</span>
+      </div>
+    </div>
+    <div id="freq-grid" class="freq-grid" style="margin-top:8px"></div>
+  </div>
+</div>
+<script src="../assets/utils.js"></script>
+<script>
+(function(){
+  var STATUS = document.getElementById('status');
+  function setStatus(message, isError){
+    STATUS.textContent = message || '';
+    STATUS.style.color = isError ? '#b91c1c' : '#6b7280';
+  }
+
+  var FIRST_DRAW_DATE_ISO = '2002-12-07';
+  var STORAGE_KEY = 'lottoCacheV1';
+
+  function loadCache(){
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null'); } catch(e){ return null; }
+  }
+  function saveCache(cache){
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(cache));
+  }
+  function clearCache(){
+    localStorage.removeItem(STORAGE_KEY);
+  }
+
+  function getApproximateLatestDrwNo(){
+    var start = new Date(FIRST_DRAW_DATE_ISO + 'T12:00:00Z');
+    var now = new Date();
+    var weeks = Math.floor((now - start) / (7 * 24 * 60 * 60 * 1000));
+    return Math.max(1, weeks + 1);
+  }
+
+  function buildApiUrl(n){
+    return 'https://www.dhlottery.co.kr/common.do?method=getLottoNumber&drwNo=' + n;
+  }
+
+  async function fetchJsonWithFallback(url){
+    try {
+      var direct = await fetch(url, { cache: 'no-store' });
+      if (direct.ok) return await direct.json();
+    } catch(e) { /* ignore */ }
+    try {
+      var proxied = await fetch('https://cors.isomorphic-git.org/' + url, { cache: 'no-store' });
+      if (proxied.ok) return await proxied.json();
+    } catch(e) { /* ignore */ }
+    try {
+      var jin = await fetch('https://r.jina.ai/http://' + url.replace(/^https?:\/\//,'') , { cache: 'no-store' });
+      if (jin.ok){
+        var text = await jin.text();
+        return JSON.parse(text);
+      }
+    } catch(e) { /* ignore */ }
+    throw new Error('데이터 요청 실패');
+  }
+
+  async function fetchDraw(n){
+    var json = await fetchJsonWithFallback(buildApiUrl(n));
+    if (!json || json.returnValue !== 'success') return null;
+    var numbers = [json.drwtNo1, json.drwtNo2, json.drwtNo3, json.drwtNo4, json.drwtNo5, json.drwtNo6].map(function(x){ return Number(x); }).sort(function(a,b){ return a-b; });
+    return {
+      drwNo: Number(json.drwNo),
+      drwNoDate: String(json.drwNoDate),
+      numbers: numbers,
+      bonus: Number(json.bnusNo)
+    };
+  }
+
+  async function discoverLatestDrwNo(){
+    setStatus('최신 회차 확인 중...');
+    var guess = getApproximateLatestDrwNo();
+    var cur = guess;
+    var data = await fetchDraw(cur);
+    if (data){
+      while (true){
+        var next = await fetchDraw(cur + 1);
+        if (!next) break;
+        cur = cur + 1;
+      }
+      return cur;
+    }
+    while (cur > 1){
+      cur = cur - 1;
+      var ok = await fetchDraw(cur);
+      if (ok){
+        while (true){
+          var nn = await fetchDraw(cur + 1);
+          if (!nn) break;
+          cur = cur + 1;
+        }
+        return cur;
+      }
+    }
+    throw new Error('최신 회차를 찾지 못했습니다');
+  }
+
+  async function loadAllDraws(){
+    var cache = loadCache();
+    var drawsByNo = (cache && cache.draws) ? cache.draws : {};
+    var knownLatest = (cache && cache.latestDrwNo) ? cache.latestDrwNo : 0;
+
+    var latest = await discoverLatestDrwNo();
+    var start = 1;
+    var end = latest;
+
+    setStatus('데이터 수집 중... (1-' + latest + '회)');
+
+    for (var n = Math.max(1, knownLatest + 1); n <= latest; n++){
+      var d = await fetchDraw(n);
+      if (d) drawsByNo[String(n)] = d;
+    }
+
+    var allNos = Object.keys(drawsByNo).map(function(k){ return Number(k); }).sort(function(a,b){ return a-b; });
+    if (allNos.length === 0){
+      for (var i = start; i <= end; i++){
+        var dd = await fetchDraw(i);
+        if (dd) drawsByNo[String(i)] = dd;
+      }
+      allNos = Object.keys(drawsByNo).map(function(k){ return Number(k); }).sort(function(a,b){ return a-b; });
+    }
+
+    var firstNo = allNos[0];
+    var lastNo = allNos[allNos.length - 1];
+    var firstDate = drawsByNo[String(firstNo)].drwNoDate;
+    var lastDate = drawsByNo[String(lastNo)].drwNoDate;
+
+    var result = {
+      latestDrwNo: lastNo,
+      draws: drawsByNo,
+      lastUpdatedAt: Date.now(),
+      summary: { firstNo: firstNo, lastNo: lastNo, firstDate: firstDate, lastDate: lastDate }
+    };
+    saveCache(result);
+    return result;
+  }
+
+  function getDrawArray(cache){
+    var arr = Object.keys(cache.draws).map(function(k){ return cache.draws[k]; });
+    arr.sort(function(a,b){ return a.drwNo - b.drwNo; });
+    return arr;
+  }
+
+  function computeStats(drawArray){
+    var counts = new Array(46); for (var i = 0; i < counts.length; i++) counts[i] = 0;
+    var lastSeenNo = new Array(46); for (var j = 0; j < lastSeenNo.length; j++) lastSeenNo[j] = 0;
+    var total = drawArray.length;
+    var latestNo = total ? drawArray[drawArray.length - 1].drwNo : 0;
+
+    for (var i2 = 0; i2 < drawArray.length; i2++){
+      var d = drawArray[i2];
+      for (var k = 0; k < d.numbers.length; k++){
+        var num = d.numbers[k];
+        counts[num] += 1;
+        lastSeenNo[num] = d.drwNo;
+      }
+    }
+
+    var gaps = new Array(46); for (var g = 0; g < gaps.length; g++) gaps[g] = 0;
+    var maxGap = 0, minGap = Number.MAX_SAFE_INTEGER;
+    for (var n = 1; n <= 45; n++){
+      gaps[n] = latestNo && lastSeenNo[n] ? (latestNo - lastSeenNo[n]) : latestNo;
+      if (gaps[n] > maxGap) maxGap = gaps[n];
+      if (gaps[n] < minGap) minGap = gaps[n];
+    }
+
+    var maxCount = 0, minCount = Number.MAX_SAFE_INTEGER;
+    for (var n2 = 1; n2 <= 45; n2++){
+      if (counts[n2] > maxCount) maxCount = counts[n2];
+      if (counts[n2] < minCount) minCount = counts[n2];
+    }
+
+    return { counts: counts, gaps: gaps, maxCount: maxCount, minCount: minCount, maxGap: maxGap, minGap: minGap, latestNo: latestNo, total: total };
+  }
+
+  function pickWeightedRandom(candidates, weights){
+    var sum = 0; for (var i = 0; i < weights.length; i++) sum += weights[i];
+    var r = Math.random() * sum;
+    var acc = 0;
+    for (var j = 0; j < candidates.length; j++){
+      acc += weights[j];
+      if (r <= acc) return candidates[j];
+    }
+    return candidates[candidates.length - 1];
+  }
+
+  function generatePredictionSets(stats, howMany){
+    var sets = [];
+    for (var s = 0; s < howMany; s++){
+      var chosen = [];
+      var available = [];
+      for (var n = 1; n <= 45; n++) available.push(n);
+      while (chosen.length < 6 && available.length > 0){
+        var weights = available.map(function(n){
+          var freq = stats.total ? (stats.counts[n] / stats.total) : 0;
+          var freqNorm = stats.maxCount > 0 ? (stats.counts[n] - stats.minCount) / (stats.maxCount - stats.minCount + 1e-9) : 0;
+          var gapNorm = stats.maxGap > 0 ? (stats.gaps[n] - stats.minGap) / (stats.maxGap - stats.minGap + 1e-9) : 0;
+          var score = 0.7 * freqNorm + 0.3 * gapNorm;
+          return 0.001 + score;
+        });
+        var pick = pickWeightedRandom(available, weights);
+        chosen.push(pick);
+        available = available.filter(function(x){ return x !== pick; });
+      }
+      chosen.sort(function(a,b){ return a-b; });
+      sets.push(chosen);
+    }
+    return sets;
+  }
+
+  function renderSummary(cache){
+    var summaryDraws = document.getElementById('summary-draws');
+    var summaryLatest = document.getElementById('summary-latest');
+    var summaryRange = document.getElementById('summary-range');
+    var lastUpdated = document.getElementById('last-updated');
+
+    var arr = getDrawArray(cache);
+    summaryDraws.textContent = '총 회차: ' + arr.length.toString() + '회';
+    summaryLatest.textContent = '최근 회차: ' + cache.latestDrwNo.toString() + '회';
+    summaryRange.textContent = '기간: ' + cache.summary.firstNo + '회 (' + cache.summary.firstDate + ') ~ ' + cache.summary.lastNo + '회 (' + cache.summary.lastDate + ')';
+    var dt = new Date(cache.lastUpdatedAt);
+    lastUpdated.textContent = '업데이트: ' + dt.toLocaleString();
+  }
+
+  function renderFrequency(stats){
+    var grid = document.getElementById('freq-grid');
+    grid.innerHTML = '';
+    var max = stats.maxCount;
+    var min = stats.minCount;
+    for (var n = 1; n <= 45; n++){
+      var count = stats.counts[n];
+      var pct = stats.total ? (count / stats.total * 100) : 0;
+      var intensity = (count - min) / (max - min + 1e-9);
+      var bg;
+      if (intensity < 0.15) bg = '#eef2ff';
+      else if (intensity < 0.3) bg = '#dbeafe';
+      else if (intensity < 0.45) bg = '#bfdbfe';
+      else if (intensity < 0.6) bg = '#93c5fd';
+      else if (intensity < 0.8) bg = '#60a5fa';
+      else bg = '#3b82f6';
+      var cell = document.createElement('div');
+      cell.className = 'freq-cell';
+      var left = document.createElement('div');
+      left.style.display = 'flex'; left.style.alignItems = 'center';
+      var num = document.createElement('div'); num.className = 'freq-num'; num.textContent = n.toString(); num.style.background = bg; num.style.color = '#0b1e59';
+      var text = document.createElement('div'); text.textContent = count.toString() + '회';
+      left.appendChild(num); left.appendChild(text);
+      var right = document.createElement('div'); right.className = 'freq-meta'; right.innerHTML = pct.toFixed(1) + '%<br><span class="muted">공백 ' + stats.gaps[n] + '</span>';
+      cell.appendChild(left); cell.appendChild(right);
+      grid.appendChild(cell);
+    }
+  }
+
+  function renderPredictions(sets){
+    var wrap = document.getElementById('prediction-sets');
+    wrap.innerHTML = '';
+    sets.forEach(function(nums, idx){
+      var badge = document.createElement('span');
+      badge.className = 'badge';
+      var label = document.createElement('span');
+      label.textContent = '세트 ' + (idx + 1) + ':';
+      var numsEl = document.createElement('span');
+      numsEl.className = 'nums';
+      numsEl.textContent = nums.join(' ');
+      var btn = document.createElement('button');
+      btn.className = 'secondary';
+      btn.textContent = '복사';
+      btn.addEventListener('click', function(){ Encoders.copyToClipboard(nums.join(' ')); setStatus('복사됨'); });
+      badge.appendChild(label);
+      badge.appendChild(numsEl);
+      badge.appendChild(btn);
+      wrap.appendChild(badge);
+    });
+  }
+
+  function filterRange(drawArray){
+    var sel = document.getElementById('range-select');
+    var val = sel.value;
+    if (val === 'all') return drawArray.slice();
+    var n = parseInt(val, 10);
+    if (!isFinite(n) || n <= 0) return drawArray.slice();
+    return drawArray.slice(-n);
+  }
+
+  var CURRENT_CACHE = null;
+
+  async function refreshAll(){
+    try {
+      setStatus('갱신 중...');
+      var cache = await loadAllDraws();
+      CURRENT_CACHE = cache;
+      renderSummary(cache);
+      var arr = filterRange(getDrawArray(cache));
+      var stats = computeStats(arr);
+      renderFrequency(stats);
+      var count = Math.max(1, Math.min(10, parseInt(document.getElementById('set-count').value, 10) || 5));
+      var preds = generatePredictionSets(stats, count);
+      renderPredictions(preds);
+      setStatus('완료');
+    } catch(e){
+      setStatus(e.message || String(e), true);
+    }
+  }
+
+  function recomputeFromCache(){
+    if (!CURRENT_CACHE) return;
+    var arr = filterRange(getDrawArray(CURRENT_CACHE));
+    var stats = computeStats(arr);
+    renderFrequency(stats);
+    var count = Math.max(1, Math.min(10, parseInt(document.getElementById('set-count').value, 10) || 5));
+    renderPredictions(generatePredictionSets(stats, count));
+  }
+
+  document.getElementById('refresh').addEventListener('click', function(){ refreshAll(); });
+  document.getElementById('regen').addEventListener('click', function(){ recomputeFromCache(); setStatus('새로 생성됨'); });
+  document.getElementById('range-select').addEventListener('change', function(){ recomputeFromCache(); });
+  document.getElementById('set-count').addEventListener('change', function(){ recomputeFromCache(); });
+  document.getElementById('clear-cache').addEventListener('click', function(){ clearCache(); setStatus('캐시를 초기화했습니다'); });
+
+  (async function init(){
+    var cache = loadCache();
+    if (cache){
+      CURRENT_CACHE = cache;
+      renderSummary(cache);
+      var arr = filterRange(getDrawArray(cache));
+      var stats = computeStats(arr);
+      renderFrequency(stats);
+      renderPredictions(generatePredictionSets(stats, 5));
+    }
+    await refreshAll();
+  })();
+})();
+</script>
+</body>
+</html>
